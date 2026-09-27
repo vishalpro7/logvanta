@@ -16,6 +16,7 @@ from app.parsing.service import parse
 from app.mapping.service import map_to_ocsf
 from app.validation.service import validate
 from app.traceability.service import build_trace
+from app.adaptation.service import generate_candidates
 
 router = APIRouter(prefix="/api/v1", tags=["LOGVANTA Pipeline"])
 
@@ -87,4 +88,18 @@ def check_drift(request: DriftRequest):
         "baseline": baseline,
         "current_profile": current_profile,
         "drift": drift,
+    }
+
+@router.post("/adaptation/analyze")
+def analyze_new_format(payload: dict):
+
+    parsed_fields = payload.get("parsed_fields", {})
+
+    candidates = generate_candidates(
+        parsed_fields
+    )
+
+    return {
+        "status": "analysis_complete",
+        "candidate_mappings": candidates,
     }
