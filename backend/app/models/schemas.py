@@ -34,6 +34,7 @@ class NormalizedEvent(BaseModel):
     raw: Dict[str, Any]
     ocsf_class: str = "Network Activity"
     mapping_confidence: float
+    mapping_version: Optional[int] = None
 
 
 class ValidationResult(BaseModel):
