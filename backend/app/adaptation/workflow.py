@@ -1,5 +1,6 @@
 from typing import Any
 
+from sqlalchemy.orm import Session
 from app.adaptation.registry import mapping_registry
 from app.adaptation.service import generate_candidates
 from app.drift.service import build_baseline, compare_with_baseline
@@ -19,6 +20,7 @@ def _profile(raw_log: str) -> dict[str, Any]:
 
 
 def run_adaptation_workflow(
+    db: Session,
     source: str,
     baseline_logs: list[str],
     current_log: str,
@@ -99,11 +101,12 @@ def run_adaptation_workflow(
     )
 
     version = mapping_registry.create_version(
-        source=source,
-        mappings=mapping_candidates,
-        confidence=candidate_confidence,
-        status="candidate",
-    )
+    db=db,
+    source=source,
+    mappings=mapping_candidates,
+    confidence=candidate_confidence,
+    status="candidate",
+)
 
     result.update({
         "status": "candidate_created",

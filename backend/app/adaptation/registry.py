@@ -1,73 +1,130 @@
 from datetime import datetime
 from typing import Any
 
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
+
+from app.models.database import MappingVersion
+
 
 class MappingRegistry:
 
-    def __init__(self):
-        self._versions: dict[str, list[dict[str, Any]]] = {}
-
     def create_version(
         self,
+        db: Session,
         source: str,
         mappings: list[dict[str, Any]],
         confidence: float,
         status: str = "candidate",
     ) -> dict[str, Any]:
 
-        versions = self._versions.setdefault(source, [])
+        latest = db.execute(
+            select(MappingVersion)
+            .where(MappingVersion.source == source)
+            .order_by(MappingVersion.version.desc())
+        ).scalars().first()
 
-        version_number = len(versions) + 1
+        next_version = (
+            latest.version + 1
+            if latest
+            else 1
+        )
 
-        version = {
-            "source": source,
-            "version": version_number,
-            "mappings": mappings,
-            "confidence": confidence,
-            "status": status,
-            "created_at": datetime.utcnow().isoformat(),
-        }
+        record = MappingVersion(
+            source=source,
+            version=next_version,
+            mappings=mappings,
+            confidence=confidence,
+            status=status,
+            created_at=datetime.utcnow(),
+        )
 
-        versions.append(version)
+        db.add(record)
+        db.commit()
+        db.refresh(record)
 
-        return version
+        return self._to_dict(record)
 
-    def get_versions(self, source: str) -> list[dict[str, Any]]:
-        return self._versions.get(source, [])
+    def get_versions(
+        self,
+        db: Session,
+        source: str,
+    ) -> list[dict[str, Any]]:
 
-    def get_active_version(self, source: str):
-        versions = self._versions.get(source, [])
+        records = db.execute(
+            select(MappingVersion)
+            .where(MappingVersion.source == source)
+            .order_by(MappingVersion.version.asc())
+        ).scalars().all()
 
-        for version in reversed(versions):
-            if version["status"] == "active":
-                return version
+        return [
+            self._to_dict(record)
+            for record in records
+        ]
 
-        return None
+    def get_active_version(
+        self,
+        db: Session,
+        source: str,
+    ):
+
+        record = db.execute(
+            select(MappingVersion)
+            .where(
+                MappingVersion.source == source,
+                MappingVersion.status == "active",
+            )
+            .order_by(MappingVersion.version.desc())
+        ).scalars().first()
+
+        if record is None:
+            return None
+
+        return self._to_dict(record)
 
     def activate_version(
         self,
+        db: Session,
         source: str,
         version_number: int,
     ) -> dict[str, Any]:
 
-        versions = self._versions.get(source, [])
-
-        target = None
-
-        for version in versions:
-            if version["version"] == version_number:
-                target = version
-            else:
-                version["status"] = "archived"
+        target = db.execute(
+            select(MappingVersion)
+            .where(
+                MappingVersion.source == source,
+                MappingVersion.version == version_number,
+            )
+        ).scalars().first()
 
         if target is None:
             raise ValueError(
                 f"Version {version_number} not found for {source}"
             )
 
-        target["status"] = "active"
+        db.execute(
+            update(MappingVersion)
+            .where(MappingVersion.source == source)
+            .values(status="archived")
+        )
 
-        return target
+        target.status = "active"
+
+        db.commit()
+        db.refresh(target)
+
+        return self._to_dict(target)
+
+    @staticmethod
+    def _to_dict(record: MappingVersion) -> dict[str, Any]:
+        return {
+            "source": record.source,
+            "version": record.version,
+            "mappings": record.mappings,
+            "confidence": record.confidence,
+            "status": record.status,
+            "created_at": record.created_at.isoformat(),
+        }
 
 
 mapping_registry = MappingRegistry()

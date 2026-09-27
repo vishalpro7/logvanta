@@ -11,6 +11,10 @@ from app.models.schemas import (
     MappingVersionRequest,
     MappingVersionResponse,
 )
+from fastapi import APIRouter, HTTPException, Depends
+from sqlalchemy.orm import Session
+
+from app.database import get_db
 from app.drift.service import build_baseline, compare_with_baseline
 from app.ingestion.service import ingest
 from app.profiling.service import profile_log
@@ -112,24 +116,32 @@ def analyze_new_format(payload: dict):
     "/adaptation/version",
     response_model=MappingVersionResponse
 )
-def create_mapping_version(request: MappingVersionRequest):
+def create_mapping_version(
+    request: MappingVersionRequest,
+    db: Session = Depends(get_db),
+):
 
-    version = mapping_registry.create_version(
+    return mapping_registry.create_version(
+        db=db,
         source=request.source,
         mappings=request.mappings,
         confidence=request.confidence,
     )
 
-    return version
-
 @router.get(
     "/adaptation/{source}/versions"
 )
-def get_mapping_versions(source: str):
+def get_mapping_versions(
+    source: str,
+    db: Session = Depends(get_db),
+):
 
     return {
         "source": source,
-        "versions": mapping_registry.get_versions(source),
+        "versions": mapping_registry.get_versions(
+            db,
+            source,
+        ),
     }
 
 @router.post(
@@ -138,23 +150,27 @@ def get_mapping_versions(source: str):
 def activate_mapping_version(
     source: str,
     version: int,
+    db: Session = Depends(get_db),
 ):
 
     try:
-        activated = mapping_registry.activate_version(
+        return mapping_registry.activate_version(
+            db,
             source,
             version,
         )
+
     except ValueError as exc:
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         )
 
-    return activated
-
 @router.post("/adaptation/workflow")
-def adaptation_workflow(payload: dict):
+def adaptation_workflow(
+    payload: dict,
+    db: Session = Depends(get_db),
+):
     source = payload.get("source")
     baseline_logs = payload.get("baseline_logs", [])
     current_log = payload.get("current_log")
@@ -179,6 +195,7 @@ def adaptation_workflow(payload: dict):
 
     try:
         return run_adaptation_workflow(
+            db=db,
             source=source,
             baseline_logs=baseline_logs,
             current_log=current_log,

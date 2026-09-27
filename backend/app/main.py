@@ -1,6 +1,10 @@
 from fastapi import FastAPI
 from app.api.routes.process import router as process_router
+from app.database import Base, engine
+from app.models.database import MappingVersion
 
+
+Base.metadata.create_all(bind=engine)
 app = FastAPI(
     title="LOGVANTA",
     description="Adaptive security log preprocessing and normalization framework",
