@@ -20,6 +20,7 @@ from app.validation.service import validate
 from app.traceability.service import build_trace
 from app.adaptation.service import generate_candidates
 from app.adaptation.registry import mapping_registry
+from app.adaptation.workflow import run_adaptation_workflow
 
 router = APIRouter(prefix="/api/v1", tags=["LOGVANTA Pipeline"])
 
@@ -151,3 +152,39 @@ def activate_mapping_version(
         )
 
     return activated
+
+@router.post("/adaptation/workflow")
+def adaptation_workflow(payload: dict):
+    source = payload.get("source")
+    baseline_logs = payload.get("baseline_logs", [])
+    current_log = payload.get("current_log")
+
+    if not source:
+        raise HTTPException(
+            status_code=400,
+            detail="source is required",
+        )
+
+    if not baseline_logs:
+        raise HTTPException(
+            status_code=400,
+            detail="baseline_logs must contain at least one log",
+        )
+
+    if not current_log:
+        raise HTTPException(
+            status_code=400,
+            detail="current_log is required",
+        )
+
+    try:
+        return run_adaptation_workflow(
+            source=source,
+            baseline_logs=baseline_logs,
+            current_log=current_log,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Adaptation workflow failed: {exc}",
+        )
