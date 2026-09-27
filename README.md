@@ -868,6 +868,468 @@ This demonstrates the currently implemented LOGVANTA pipeline from **raw log ing
 
 ---
 
+## 30. Sample Test Data
+
+The following sample logs can be used to test the currently implemented LOGVANTA API routes.
+
+The examples use a fictional firewall source named `firewall-01`.
+
+---
+
+### 30.1 Baseline Logs
+
+Use these logs as the known/baseline format for `firewall-01`.
+
+**Baseline Log 1**
+```text
+source_address=192.168.1.20 destination_address=10.0.0.8 decision=allow severity_level=3
+```
+
+**Baseline Log 2**
+```text
+source_address=192.168.1.21 destination_address=10.0.0.10 decision=deny severity_level=5
+```
+
+**Baseline Log 3**
+```text
+source_address=192.168.1.25 destination_address=10.0.0.15 decision=allow severity_level=2
+```
+
+These logs establish the original field structure:
+
+```text
+source_address
+destination_address
+decision
+severity_level
+```
+
+---
+
+## 31. Process API Test
+
+### Route
+
+```http
+POST /api/v1/process
+```
+
+Use:
+
+```json
+{
+  "source": "firewall-01",
+  "raw_log": "source_address=192.168.1.20 destination_address=10.0.0.8 decision=allow severity_level=3"
+}
+```
+
+Expected profile:
+
+```text
+detected_format → key_value
+```
+
+Expected normalized fields:
+
+```text
+source_endpoint      → 192.168.1.20
+destination_endpoint → 10.0.0.8
+action               → allow
+severity             → 3
+```
+
+The response should also contain:
+
+```text
+event_id
+profile
+normalized
+validation
+traceability
+mapping_version
+raw_sha256
+```
+
+---
+
+## 32. Mapping Version Test
+
+### Route
+
+```http
+GET /api/v1/adaptation/firewall-01/versions
+```
+
+Initially, this may return the mapping versions already created for the source.
+
+A mapping may look like:
+
+```json
+{
+  "source": "firewall-01",
+  "version": 2,
+  "mappings": [
+    { "field": "source_address", "target": "source_endpoint" },
+    { "field": "destination_address", "target": "destination_endpoint" },
+    { "field": "decision", "target": "action" },
+    { "field": "severity_level", "target": "severity" }
+  ],
+  "confidence": 0.91,
+  "status": "active"
+}
+```
+
+The important thing to verify is:
+
+```text
+status = active
+```
+
+for the mapping currently being used by `/process`.
+
+> **Note:** The exact version number returned here depends on the current state of your local database — don't assume it will always be `2`. Always read the version number from this endpoint's response rather than hardcoding it, and use that value in later steps (activation, verification, etc.).
+
+---
+
+## 33. Drift Detection Test
+
+To simulate a firewall vendor changing its log format, use a new field structure.
+
+### Route
+
+```http
+POST /api/v1/drift/check
+```
+
+Use the baseline logs:
+
+```json
+{
+  "source": "firewall-01",
+  "baseline_logs": [
+    "source_address=192.168.1.20 destination_address=10.0.0.8 decision=allow severity_level=3",
+    "source_address=192.168.1.21 destination_address=10.0.0.10 decision=deny severity_level=5",
+    "source_address=192.168.1.25 destination_address=10.0.0.15 decision=allow severity_level=2"
+  ],
+  "current_log": "src_addr=192.168.1.30 dst_addr=10.0.0.20 action=deny severity=7"
+}
+```
+
+The new log intentionally changes:
+
+```text
+source_address      → src_addr
+destination_address → dst_addr
+decision            → action
+severity_level      → severity
+```
+
+The purpose of this test is to verify that LOGVANTA recognizes that the current structure differs from the established baseline.
+
+---
+
+## 34. Adaptation Analysis Test
+
+### Route
+
+```http
+POST /api/v1/adaptation/analyze
+```
+
+Use the newly observed fields:
+
+```json
+{
+  "source": "firewall-01",
+  "fields": [
+    { "name": "src_addr", "inferred_type": "ip" },
+    { "name": "dst_addr", "inferred_type": "ip" },
+    { "name": "action", "inferred_type": "string" },
+    { "name": "severity", "inferred_type": "number" }
+  ]
+}
+```
+
+The adaptation engine should generate candidate mappings similar to:
+
+```text
+src_addr  → source_endpoint
+dst_addr  → destination_endpoint
+action    → action
+severity  → severity
+```
+
+with associated confidence information.
+
+---
+
+## 35. Complete Adaptation Workflow Test
+
+### Route
+
+```http
+POST /api/v1/adaptation/workflow
+```
+
+Use the following request:
+
+```json
+{
+  "source": "firewall-01",
+  "baseline_logs": [
+    "source_address=192.168.1.20 destination_address=10.0.0.8 decision=allow severity_level=3",
+    "source_address=192.168.1.21 destination_address=10.0.0.10 decision=deny severity_level=5",
+    "source_address=192.168.1.25 destination_address=10.0.0.15 decision=allow severity_level=2"
+  ],
+  "current_log": "src_addr=192.168.1.30 dst_addr=10.0.0.20 action=deny severity=7"
+}
+```
+
+The workflow should perform:
+
+```text
+Baseline
+    ↓
+Profile baseline
+    ↓
+Profile current log
+    ↓
+Detect structural difference
+    ↓
+Generate candidate mappings
+    ↓
+Calculate confidence
+    ↓
+Create candidate mapping version
+```
+
+---
+
+## 36. Create Mapping Version Test
+
+If the adaptation analysis produces the expected candidates, create a new mapping version.
+
+### Route
+
+```http
+POST /api/v1/adaptation/version
+```
+
+Use the candidate mappings returned by the adaptation endpoint.
+
+Example:
+
+```json
+{
+  "source": "firewall-01",
+  "mappings": [
+    { "field": "src_addr", "target": "source_endpoint" },
+    { "field": "dst_addr", "target": "destination_endpoint" },
+    { "field": "action", "target": "action" },
+    { "field": "severity", "target": "severity" }
+  ],
+  "confidence": 0.90
+}
+```
+
+The system should create a new version. The exact version number depends on the current state of the database — **don't assume a fixed number; read it from the response.**
+
+---
+
+## 37. Check Mapping History Again
+
+Run:
+
+```http
+GET /api/v1/adaptation/firewall-01/versions
+```
+
+You should now see the newly created version, e.g.:
+
+```text
+Version 1 → archived
+Version 2 → active
+Version 3 → candidate
+```
+
+This demonstrates that mapping versions are persisted rather than existing only in memory.
+
+---
+
+## 38. Activate the New Mapping
+
+After reviewing the candidate mapping:
+
+### Route
+
+```http
+POST /api/v1/adaptation/firewall-01/activate/{version}
+```
+
+Replace `{version}` with the **actual candidate version number returned by the previous API call** — never assume it will be a specific number, since your local database may already contain different versions from earlier testing.
+
+Expected lifecycle:
+
+```text
+Before:                  After:
+v(n-1) → active          v(n-1) → archived
+v(n)   → candidate       v(n)   → active
+```
+
+---
+
+## 39. Test the New Format
+
+Now process a log using the changed firewall format.
+
+### Route
+
+```http
+POST /api/v1/process
+```
+
+Use:
+
+```json
+{
+  "source": "firewall-01",
+  "raw_log": "src_addr=192.168.1.30 dst_addr=10.0.0.20 action=deny severity=7"
+}
+```
+
+The important result is that LOGVANTA should now process the new field names using the newly activated mapping.
+
+Expected normalized representation:
+
+```text
+source_endpoint      → 192.168.1.30
+destination_endpoint → 10.0.0.20
+action               → deny
+severity             → 7
+```
+
+The response should show the newly activated mapping version — matching whatever version you activated in Step 38, not necessarily `3`.
+
+---
+
+## 40. Traceability Test
+
+From the `/process` response, verify the `traceability` section. It should contain information similar to:
+
+```json
+{
+  "event_id": "...",
+  "source": "firewall-01",
+  "raw_sha256": "...",
+  "raw_preserved": true,
+  "normalized_fields": {
+    "source_endpoint": { "value": "192.168.1.30", "source": "source_endpoint" },
+    "destination_endpoint": { "value": "10.0.0.20", "source": "destination_endpoint" },
+    "action": { "value": "deny", "source": "action" },
+    "severity": { "value": "7", "source": "severity" }
+  }
+}
+```
+
+Verify:
+
+```text
+raw_preserved   = true
+raw_sha256      = present
+mapping_version = the newly activated version (read from the response, not assumed)
+```
+
+This confirms that the normalized event can be traced back to its original input and the mapping version responsible for the transformation.
+
+---
+
+## 41. Validation Test
+
+Every successful `/process` request should contain:
+
+```json
+{
+  "validation": {
+    "valid": true,
+    "errors": [],
+    "warnings": []
+  }
+}
+```
+
+A valid event therefore follows:
+
+```text
+Raw Log → Profile → Parse → Mapping → OCSF Normalization → Validation → Traceability
+```
+
+---
+
+## 42. Full Demonstration Dataset
+
+For a quick demonstration, use these three stages.
+
+**Stage 1 — Original format**
+```text
+source_address=192.168.1.20 destination_address=10.0.0.8 decision=allow severity_level=3
+```
+
+**Stage 2 — Changed format**
+```text
+src_addr=192.168.1.30 dst_addr=10.0.0.20 action=deny severity=7
+```
+
+**Stage 3 — Another event using the new format**
+```text
+src_addr=192.168.1.45 dst_addr=10.0.0.25 action=allow severity=4
+```
+
+The expected lifecycle:
+
+```text
+              ORIGINAL FORMAT
+                    │
+                    ▼
+              Mapping v(n)
+                    │
+                    ▼
+                 PROCESS
+                    │
+                    ▼
+             Normalized Event
+
+
+             FORMAT CHANGES
+                    │
+                    ▼
+              Drift Detected
+                    │
+                    ▼
+            Candidate Mapping
+                    │
+                    ▼
+             Mapping v(n+1)
+                    │
+                    ▼
+                APPROVE
+                    │
+                    ▼
+          Mapping v(n+1) Active
+                    │
+                    ▼
+             NEW FORMAT LOG
+                    │
+                    ▼
+                 PROCESS
+                    │
+                    ▼
+          Correctly Normalized
+```
+
+This is the primary end-to-end demonstration of the adaptive capability currently implemented in LOGVANTA.
+
+---
+
 ## Project
 
 **LOGVANTA — Adaptive Universal Log Pre-Processing Framework**
