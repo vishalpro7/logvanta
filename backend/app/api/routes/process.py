@@ -30,7 +30,10 @@ router = APIRouter(prefix="/api/v1", tags=["LOGVANTA Pipeline"])
 
 
 @router.post("/process", response_model=ProcessResult)
-def process_log(request: IngestRequest):
+def process_log(
+    request: IngestRequest,
+    db: Session = Depends(get_db),
+):
     record = ingest(request.source, request.raw_log)
 
     detected_format, fields, confidence, parser_hint = profile_log(request.raw_log)
@@ -39,7 +42,12 @@ def process_log(request: IngestRequest):
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Parsing failed: {exc}")
 
-    normalized = map_to_ocsf(parsed, request.source, record["event_id"])
+    normalized = map_to_ocsf(
+    db,
+    parsed,
+    request.source,
+    record["event_id"],
+)
     validation = validate(normalized)
     trace = build_trace(record["event_id"], request.source, request.raw_log, normalized)
 

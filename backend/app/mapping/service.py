@@ -1,6 +1,7 @@
 from typing import Any
 
 from app.adaptation.registry import mapping_registry
+from sqlalchemy.orm import Session
 
 
 ALIASES = {
@@ -31,10 +32,14 @@ ALIASES = {
 
 
 def _get_active_aliases(
+    db: Session,
     source: str,
 ) -> tuple[dict[str, str], int | None]:
 
-    active_version = mapping_registry.get_active_version(source)
+    active_version = mapping_registry.get_active_version(
+    db,
+    source,
+)
 
     if not active_version:
         return ALIASES, None
@@ -67,12 +72,16 @@ def _get_active_aliases(
 
 
 def map_to_ocsf(
+    db: Session,
     parsed: dict[str, Any],
     source: str,
     event_id: str,
 ):
 
-    aliases, mapping_version = _get_active_aliases(source)
+    aliases, mapping_version = _get_active_aliases(
+    db,
+    source,
+)
 
     normalized = {
         "event_id": event_id,
