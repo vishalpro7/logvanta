@@ -33,6 +33,14 @@ The key differentiator of LOGVANTA is its **adaptive mapping lifecycle**. Instea
 19. [Design Philosophy](#19-design-philosophy)
 20. [Planned Differentiator](#20-planned-differentiator)
 21. [Current Development Stage](#21-current-development-stage)
+22. [How to Test LOGVANTA](#22-how-to-test-logvanta)
+23. [Basic Processing Test](#23-basic-processing-test)
+24. [Test Mapping Versions](#24-test-mapping-versions)
+25. [Test Drift Detection](#25-test-drift-detection)
+26. [Test Adaptive Mapping](#26-test-adaptive-mapping)
+27. [Activate a Mapping Version](#27-activate-a-mapping-version)
+28. [Verify the New Mapping](#28-verify-the-new-mapping)
+29. [Complete Test Flow](#29-complete-test-flow)
 
 ---
 
@@ -576,6 +584,287 @@ Confidence → Approval → New Mapping Version → Automatic Use
 ```
 
 The project will then expand toward multi-source interoperability, visualization, export, anomaly detection, and air-gapped deployment.
+
+---
+
+## 22. How to Test LOGVANTA
+
+Follow the steps below to run and test the current implementation locally.
+
+### Step 1 — Clone the Repository
+
+```bash
+git clone https://github.com/vishalpro7/logvanta.git
+cd logvanta
+```
+
+### Step 2 — Enter the Backend
+
+```bash
+cd backend
+```
+
+### Step 3 — Create and Activate Virtual Environment
+
+**Windows**
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+### Step 4 — Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### Step 5 — Start the API Server
+
+From the `backend` directory:
+
+```bash
+uvicorn app.main:app --reload
+```
+
+The API will be available at:
+
+```text
+http://127.0.0.1:8000
+```
+
+### Step 6 — Open Swagger UI
+
+Open the following URL in a browser:
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+Swagger UI provides an interactive interface for testing the LOGVANTA APIs without requiring any additional frontend.
+
+---
+
+## 23. Basic Processing Test
+
+Use the processing endpoint:
+
+```text
+POST /api/v1/process
+```
+
+Send a sample firewall log using the request body expected by the API.
+
+Example key-value log:
+
+```text
+source_address=192.168.1.20 destination_address=10.0.0.8 decision=deny severity_level=5
+```
+
+The response should contain:
+
+- Event ID
+- Detected log profile
+- Parsed fields
+- OCSF-normalized event
+- Validation result
+- Traceability information
+- Mapping version
+- Raw-event SHA-256 hash
+
+A successful response should contain information similar to:
+
+```json
+{
+  "normalized": {
+    "source_endpoint": "192.168.1.20",
+    "destination_endpoint": "10.0.0.8",
+    "action": "deny",
+    "severity": "5"
+  },
+  "validation": {
+    "valid": true
+  },
+  "traceability": {
+    "raw_preserved": true,
+    "raw_sha256": "..."
+  }
+}
+```
+
+---
+
+## 24. Test Mapping Versions
+
+Use:
+
+```text
+GET /api/v1/adaptation/{source}/versions
+```
+
+For example:
+
+```text
+GET /api/v1/adaptation/firewall-01/versions
+```
+
+This displays the mapping history for the source, including:
+
+- Mapping version
+- Field mappings
+- Confidence
+- Status
+- Creation timestamp
+
+A source may contain multiple versions:
+
+```text
+Version 1 → archived
+Version 2 → active
+```
+
+---
+
+## 25. Test Drift Detection
+
+Use:
+
+```text
+POST /api/v1/drift/check
+```
+
+Provide baseline logs representing the known format and a current log representing the newly observed format.
+
+The endpoint compares the current structure against the baseline and reports whether structural drift has occurred.
+
+Example concept:
+
+```text
+Baseline:
+
+source_address=192.168.1.20
+destination_address=10.0.0.8
+decision=deny
+
+
+Current:
+
+src_addr=192.168.1.20
+dst_addr=10.0.0.8
+action=deny
+```
+
+The changed field structure should be detected as potential format drift.
+
+---
+
+## 26. Test Adaptive Mapping
+
+Use the adaptation workflow endpoint:
+
+```text
+POST /api/v1/adaptation/workflow
+```
+
+Provide:
+
+- `source`
+- `baseline_logs`
+- `current_log`
+
+The workflow performs the adaptation process:
+
+```text
+Baseline Logs
+      ↓
+Baseline Profile
+      ↓
+Current Log
+      ↓
+Drift Analysis
+      ↓
+Candidate Mapping
+      ↓
+Confidence Calculation
+      ↓
+New Mapping Version
+```
+
+The resulting candidate mapping can then be inspected before activation.
+
+---
+
+## 27. Activate a Mapping Version
+
+After reviewing a candidate mapping, use:
+
+```text
+POST /api/v1/adaptation/{source}/activate/{version}
+```
+
+Example:
+
+```text
+POST /api/v1/adaptation/firewall-01/activate/2
+```
+
+The selected version becomes:
+
+```text
+ACTIVE
+```
+
+while the previously active version becomes:
+
+```text
+ARCHIVED
+```
+
+---
+
+## 28. Verify the New Mapping
+
+Run the processing endpoint again using a log matching the newly adapted format.
+
+```text
+POST /api/v1/process
+```
+
+Verify that the normalized output now uses the newly activated mapping.
+
+Check the response for:
+
+```json
+{
+  "mapping_version": 2
+}
+```
+
+This confirms that the mapping version is not merely stored in the database but is actually being used by the processing pipeline.
+
+---
+
+## 29. Complete Test Flow
+
+For a complete demonstration of the current LOGVANTA implementation, use the following sequence:
+
+```text
+ 1. Start FastAPI
+ 2. Open /docs
+ 3. Process a known firewall log
+ 4. Inspect profiling + normalization
+ 5. Check mapping versions
+ 6. Submit a changed log format
+ 7. Run drift detection
+ 8. Run adaptation workflow
+ 9. Inspect generated mapping version
+10. Activate the required version
+11. Process the new-format log
+12. Verify normalized output + mapping version
+13. Verify traceability + SHA-256
+```
+
+This demonstrates the currently implemented LOGVANTA pipeline from **raw log ingestion through adaptive mapping, normalization, validation, and traceability**.
 
 ---
 
