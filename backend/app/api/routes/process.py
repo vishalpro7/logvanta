@@ -8,6 +8,8 @@ from app.models.schemas import (
     ValidationResult,
     DriftRequest,
     DriftResponse,
+    MappingVersionRequest,
+    MappingVersionResponse,
 )
 from app.drift.service import build_baseline, compare_with_baseline
 from app.ingestion.service import ingest
@@ -17,6 +19,7 @@ from app.mapping.service import map_to_ocsf
 from app.validation.service import validate
 from app.traceability.service import build_trace
 from app.adaptation.service import generate_candidates
+from app.adaptation.registry import mapping_registry
 
 router = APIRouter(prefix="/api/v1", tags=["LOGVANTA Pipeline"])
 
@@ -103,3 +106,48 @@ def analyze_new_format(payload: dict):
         "status": "analysis_complete",
         "candidate_mappings": candidates,
     }
+
+@router.post(
+    "/adaptation/version",
+    response_model=MappingVersionResponse
+)
+def create_mapping_version(request: MappingVersionRequest):
+
+    version = mapping_registry.create_version(
+        source=request.source,
+        mappings=request.mappings,
+        confidence=request.confidence,
+    )
+
+    return version
+
+@router.get(
+    "/adaptation/{source}/versions"
+)
+def get_mapping_versions(source: str):
+
+    return {
+        "source": source,
+        "versions": mapping_registry.get_versions(source),
+    }
+
+@router.post(
+    "/adaptation/{source}/activate/{version}"
+)
+def activate_mapping_version(
+    source: str,
+    version: int,
+):
+
+    try:
+        activated = mapping_registry.activate_version(
+            source,
+            version,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        )
+
+    return activated

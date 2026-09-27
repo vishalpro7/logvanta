@@ -72,3 +72,16 @@ class DriftResponse(BaseModel):
     baseline: Dict[str, Any]
     current_profile: ProfileResult
     drift: DriftResult
+
+class MappingVersionRequest(BaseModel):
+    source: str
+    mappings: List[Dict[str, Any]]
+    confidence: float
+
+class MappingVersionResponse(BaseModel):
+    source: str
+    version: int
+    mappings: List[Dict[str, Any]]
+    confidence: float
+    status: str
+    created_at: str
