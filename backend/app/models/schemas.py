@@ -48,3 +48,27 @@ class ProcessResult(BaseModel):
     normalized: NormalizedEvent
     validation: ValidationResult
     traceability: Dict[str, Any]
+
+class DriftResult(BaseModel):
+    drift_detected: bool
+    reason: str
+    baseline_confidence: float
+    current_confidence: float
+    confidence_change: float
+    missing_fields: List[str]
+    new_fields: List[str]
+    baseline_signature: List[str]
+    current_signature: List[str]
+
+
+class DriftRequest(BaseModel):
+    source: str
+    baseline_logs: List[str] = Field(..., min_length=1)
+    current_log: str
+
+
+class DriftResponse(BaseModel):
+    source: str
+    baseline: Dict[str, Any]
+    current_profile: ProfileResult
+    drift: DriftResult

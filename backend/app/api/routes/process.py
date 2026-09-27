@@ -1,6 +1,15 @@
 from fastapi import APIRouter, HTTPException
 
-from app.models.schemas import IngestRequest, ProcessResult, ProfileResult, NormalizedEvent, ValidationResult
+from app.models.schemas import (
+    IngestRequest,
+    ProcessResult,
+    ProfileResult,
+    NormalizedEvent,
+    ValidationResult,
+    DriftRequest,
+    DriftResponse,
+)
+from app.drift.service import build_baseline, compare_with_baseline
 from app.ingestion.service import ingest
 from app.profiling.service import profile_log
 from app.parsing.service import parse
@@ -36,4 +45,46 @@ def process_log(request: IngestRequest):
         "normalized": normalized,
         "validation": validation,
         "traceability": trace,
+    }
+
+@router.post("/drift/check", response_model=DriftResponse)
+def check_drift(request: DriftRequest):
+
+    baseline_profiles = []
+
+    for raw_log in request.baseline_logs:
+        detected_format, fields, confidence, parser_hint = profile_log(
+            raw_log
+        )
+
+        baseline_profiles.append({
+            "detected_format": detected_format,
+            "fields": fields,
+            "confidence": confidence,
+            "parser_hint": parser_hint,
+        })
+
+    baseline = build_baseline(baseline_profiles)
+
+    detected_format, fields, confidence, parser_hint = profile_log(
+        request.current_log
+    )
+
+    current_profile = {
+        "detected_format": detected_format,
+        "fields": fields,
+        "confidence": confidence,
+        "parser_hint": parser_hint,
+    }
+
+    drift = compare_with_baseline(
+        baseline,
+        current_profile,
+    )
+
+    return {
+        "source": request.source,
+        "baseline": baseline,
+        "current_profile": current_profile,
+        "drift": drift,
     }
