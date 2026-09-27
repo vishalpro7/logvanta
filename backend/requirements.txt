@@ -8,3 +8,5 @@ sqlalchemy
 numpy
 pandas
 scikit-learn
+pytest
+httpx
