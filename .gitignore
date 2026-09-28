@@ -45,3 +45,5 @@ data/generated/
 
 # Docker
 docker-data/
+
+backend/.env.example
