@@ -449,11 +449,13 @@ The same response also contains validation and traceability information. This de
 - Python
 - FastAPI
 - Uvicorn
+- MinIO Raw Storage
 
 **Data & ORM**
 - SQLAlchemy
 - SQLite for local development
 - PostgreSQL-compatible architecture
+- RBAC and API Authentication
 
 **Processing**
 - Custom log profiler
